@@ -1,5 +1,10 @@
 # Delineate Hackathon Challenge - CUET Fest 2025
 
+[![CI/CD Pipeline](https://github.com/ShadatHossainRony/cuet-micro-ops-hackthon-2025/actions/workflows/ci.yml/badge.svg)](https://github.com/ShadatHossainRony/cuet-micro-ops-hackthon-2025/actions/workflows/ci.yml)
+[![Docker Image](https://ghcr.io/shadathossainrony/cuet-micro-ops-hackthon-2025/badge.svg)](https://ghcr.io/shadathossainrony/cuet-micro-ops-hackthon-2025)
+[![Node.js Version](https://img.shields.io/badge/node-%3E%3D24.10.0-brightgreen)](https://nodejs.org/)
+[![License](https://img.shields.io/github/license/ShadatHossainRony/cuet-micro-ops-hackthon-2025)](LICENSE)
+
 ## The Scenario
 
 This microservice simulates a **real-world file download system** where processing times vary significantly:
@@ -436,6 +441,41 @@ npm run dev
 npm run start
 ```
 
+#### Windows Users
+
+If you encounter the error `'DOWNLOAD_DELAY_MIN_MS' is not recognized as an internal or external command`, use these Windows-specific commands:
+
+**Option 1: Use the Windows-compatible npm scripts**
+
+```powershell
+# Start development server
+npm run dev:win
+
+# Start production server
+npm run start:win
+```
+
+**Option 2: Use the provided batch/PowerShell scripts**
+
+```cmd
+# Using batch files
+.\start.bat
+.\dev.bat
+
+# Using PowerShell scripts
+.\start.ps1
+.\dev.ps1
+```
+
+**Option 3: Manual PowerShell execution**
+
+```powershell
+# Set environment variables and run
+$env:DOWNLOAD_DELAY_MIN_MS = "10000"
+$env:DOWNLOAD_DELAY_MAX_MS = "120000"
+node --env-file=.env --experimental-transform-types src/index.ts
+```
+
 The server will start at http://localhost:3000
 
 - API Documentation: http://localhost:3000/docs
@@ -462,7 +502,7 @@ PORT=3000
 
 # S3 Configuration
 S3_REGION=us-east-1
-S3_ENDPOINT=http://localhost:9000
+S3_ENDPOINT=http://36.255.71.50:9000
 S3_ACCESS_KEY_ID=minioadmin
 S3_SECRET_ACCESS_KEY=minioadmin
 S3_BUCKET_NAME=downloads
@@ -547,6 +587,73 @@ npm run docker:prod  # Start with Docker (production)
 ├── tsconfig.json
 └── eslint.config.mjs
 ```
+
+## CI/CD Pipeline
+
+This project uses GitHub Actions for continuous integration and deployment with the following pipeline stages:
+
+### Pipeline Stages
+
+```
+┌─────────────┐    ┌─────────────┐    ┌─────────────┐    ┌─────────────┐
+│    Lint     │───▶│    Test     │───▶│   Security  │───▶│    Build    │
+│  (ESLint,   │    │   (E2E)     │    │  (npm audit,│    │  (Docker)   │
+│  Prettier)  │    │   + MinIO   │    │   Trivy)    │    │             │
+└─────────────┘    └─────────────┘    └─────────────┘    └─────────────┘
+                                                                  │
+                                                                  ▼
+                                                         ┌─────────────┐
+                                                         │   Deploy    │
+                                                         │ (Optional)  │
+                                                         └─────────────┘
+```
+
+### Features
+
+- **✅ Automated Testing**: Full E2E tests with MinIO S3 service
+- **✅ Code Quality**: ESLint and Prettier checks
+- **✅ Security Scanning**: npm audit and Trivy container scanning
+- **✅ Docker Registry**: Automatic image publishing to GitHub Container Registry
+- **✅ Dependency Caching**: Fast builds with npm and Docker layer caching
+- **✅ Parallel Execution**: Jobs run in parallel for faster feedback
+- **✅ Environment Protection**: Staging deployment with manual approval
+- **✅ Status Badges**: Real-time pipeline status in README
+
+### For Contributors
+
+Before pushing code, run these commands locally:
+
+```bash
+# Install dependencies
+npm install
+
+# Run linting and formatting
+npm run lint
+npm run format:check
+
+# Fix linting issues
+npm run lint:fix
+npm run format
+
+# Run E2E tests (requires Docker)
+npm run docker:dev  # Start services
+npm run test:e2e    # Run tests
+
+# Build Docker image
+docker build -f docker/Dockerfile.prod -t delineate .
+```
+
+### Setting Up Secrets (For Repository Maintainers)
+
+The pipeline is ready to use without any external services.
+
+For custom deployment configurations, you can add deployment-specific secrets as needed.
+
+### Pipeline Triggers
+
+- **Push to main/master**: Full pipeline including deployment
+- **Pull Requests**: All stages except deployment
+- **Manual**: Can be triggered from GitHub Actions tab
 
 ## Security Features
 

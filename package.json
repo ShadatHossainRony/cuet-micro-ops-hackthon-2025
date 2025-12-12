@@ -5,14 +5,18 @@
     "node": ">=24.10.0"
   },
   "scripts": {
-    "dev": "DOWNLOAD_DELAY_MIN_MS=5000 DOWNLOAD_DELAY_MAX_MS=15000 node --env-file=.env --experimental-transform-types --watch src/index.ts",
-    "start": "DOWNLOAD_DELAY_MIN_MS=10000 DOWNLOAD_DELAY_MAX_MS=120000 node --env-file=.env --experimental-transform-types src/index.ts",
+    "dev": "node --env-file=.env --experimental-transform-types --watch src/index.ts",
+    "start": "node --env-file=.env --experimental-transform-types src/index.ts",
+    "start:win": "powershell -ExecutionPolicy Bypass -File start.ps1",
+    "dev:win": "powershell -ExecutionPolicy Bypass -File dev.ps1",
     "lint": "eslint src",
     "lint:fix": "eslint src --fix",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "test:e2e": "node --experimental-transform-types scripts/run-e2e.ts",
-    "docker:dev": "docker compose -f docker/compose.dev.yml up --build",
+    "docker:dev": "docker compose -f docker/compose.dev.yml up --build -d",
+    "docker:dev:logs": "docker compose -f docker/compose.dev.yml logs -f",
+    "docker:dev:down": "docker compose -f docker/compose.dev.yml down",
     "docker:prod": "docker compose -f docker/compose.prod.yml up --build -d"
   },
   "dependencies": {
@@ -31,9 +35,12 @@
     "zod": "^4.1.13"
   },
   "devDependencies": {
+    "@eslint/js": "^9.39.1",
     "@hono/eslint-config": "^2.0.3",
     "@types/node": "^24.10.2",
+    "eslint": "^9.39.1",
     "prettier": "^3.7.4",
-    "typescript": "^5.8.3"
+    "typescript": "^5.8.3",
+    "typescript-eslint": "^8.20.0"
   }
 }
