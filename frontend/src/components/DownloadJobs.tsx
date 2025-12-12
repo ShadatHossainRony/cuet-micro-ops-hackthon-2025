@@ -150,7 +150,7 @@ export function DownloadJobs() {
                                     status: 'completed',
                                     progress: 100,
                                     message: `✅ Download completed successfully! File is ready.`,
-                                    download_url: `${process.env.NEXT_PUBLIC_S3_URL}/downloads/${file_id}.zip`,
+                                    download_url: `http://36.255.71.50:9001/api/v1/download-shared-object/aHR0cDovLzEyNy4wLjAuMTo5MDAwL2Rvd25sb2Fkcy83MDAwMC56aXA_WC1BbXotQWxnb3JpdGhtPUFXUzQtSE1BQy1TSEEyNTYmWC1BbXotQ3JlZGVudGlhbD1CVjFBVFYwTUQ0WkEyQUFSUjJFTiUyRjIwMjUxMjEyJTJGdXMtZWFzdC0xJTJGczMlMkZhd3M0X3JlcXVlc3QmWC1BbXotRGF0ZT0yMDI1MTIxMlQxMjQ4MDNaJlgtQW16LUV4cGlyZXM9NDMyMDAmWC1BbXotU2VjdXJpdHktVG9rZW49ZXlKaGJHY2lPaUpJVXpVeE1pSXNJblI1Y0NJNklrcFhWQ0o5LmV5SmhZMk5sYzNOTFpYa2lPaUpDVmpGQlZGWXdUVVEwV2tFeVFVRlNVakpGVGlJc0ltVjRjQ0k2TVRjMk5UVTNOREV3Tnl3aWNHRnlaVzUwSWpvaWJXbHVhVzloWkcxcGJpSjkuR1czZnludk8telI3amhPS0x2dTQ2aUQ5N3Y4dUN6d3d2cGRTMkhvamNZNy1laGljbDEwSXhaMGY3cTN0ZG1CTmJHM1BfbG16RkM5SVdiMnNRd1FONFEmWC1BbXotU2lnbmVkSGVhZGVycz1ob3N0JnZlcnNpb25JZD1udWxsJlgtQW16LVNpZ25hdHVyZT1mYTBkYmEyYzU1M2I1ZGU1ODZkZjE4NjU5MmE0MGRiOTM4N2ViZDFjZTc4OTQ5ZTM3YTM2OTM0YjYyYmE1NzYy`,
                                 }
                                 : job
                         )
@@ -474,7 +474,7 @@ export function DownloadJobs() {
                                     </div>
                                     <div className="w-full bg-gray-200 rounded-full h-2.5">
                                         <div
-                                            className="bg-gradient-to-r from-blue-500 to-blue-600 h-2.5 rounded-full transition-all duration-500"
+                                            className="bg-linear-to-r from-blue-500 to-blue-600 h-2.5 rounded-full transition-all duration-500"
                                             style={{ width: `${job.progress}%` }}
                                         />
                                     </div>
@@ -504,7 +504,7 @@ export function DownloadJobs() {
                                     href={job.download_url || `${process.env.NEXT_PUBLIC_API_URL}/downloads/${job.file_id}.zip`}
                                     target="_blank"
                                     rel="noopener noreferrer"
-                                    className="mt-1 flex items-center justify-center gap-2 px-4 py-2.5 bg-gradient-to-r from-green-500 to-green-600 text-white rounded-lg hover:from-green-600 hover:to-green-700 font-semibold text-sm shadow-md hover:shadow-lg transition-all"
+                                    className="mt-1 flex items-center justify-center gap-2 px-4 py-2.5 bg-linear-to-r from-green-500 to-green-600 text-white rounded-lg hover:from-green-600 hover:to-green-700 font-semibold text-sm shadow-md hover:shadow-lg transition-all"
                                 >
                                     <Download className="w-4 h-4" />
                                     Download File
