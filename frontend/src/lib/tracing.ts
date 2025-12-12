@@ -39,10 +39,11 @@ export function initializeTracing() {
                 propagateTraceHeaderCorsUrls: [
                     /localhost:3000/,  // Propagate to our API via localhost
                     /127\.0\.0\.1:3000/,  // Propagate to our API via 127.0.0.1
+                    /36\.255\.71\.50:3000/,  // Propagate to our API via 127.0.0.1
                 ],
                 clearTimingResources: true,
                 // Don't instrument requests to Jaeger to avoid CORS issues
-                ignoreUrls: [/localhost:4318/, /127\.0\.0\.1:4318/],
+                ignoreUrls: [/localhost:4318/, /127\.0\.0\.1:4318/, /26\.255\.71\.50:3000/],
             }),
         ],
     });

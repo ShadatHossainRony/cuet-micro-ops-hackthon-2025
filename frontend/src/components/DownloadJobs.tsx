@@ -101,7 +101,7 @@ export function DownloadJobs() {
                             message: `✅ Job initiated successfully | Job ID: ${result.jobId} | Files: ${result.totalFileIds}`,
                             processing_time: responseTime / 1000,
                             progress: 0,
-                            estimated_time: 15, // Estimate 15 seconds
+                            estimated_time: 5, // Estimate 5 seconds
                         }
                         : job
                 )
@@ -117,8 +117,8 @@ export function DownloadJobs() {
             });
 
             // Simulate download progress (for demonstration)
-            const totalDuration = 15000; // 15 seconds simulation for quick demo
-            const updateInterval = 500; // Update every 0.5 seconds
+            const totalDuration = 5000; // 5 seconds simulation for quick demo
+            const updateInterval = 2000; // Update every 0.25 seconds
             const totalSteps = totalDuration / updateInterval;
             let currentStep = 0;
 
@@ -150,7 +150,7 @@ export function DownloadJobs() {
                                     status: 'completed',
                                     progress: 100,
                                     message: `✅ Download completed successfully! File is ready.`,
-                                    download_url: `http://127.0.0.1:3000/downloads/${file_id}.zip`,
+                                    download_url: `${process.env.NEXT_PUBLIC_S3_URL}/downloads/${file_id}.zip`,
                                 }
                                 : job
                         )
@@ -501,7 +501,7 @@ export function DownloadJobs() {
 
                             {job.status === 'completed' && (
                                 <a
-                                    href={job.download_url || `http://127.0.0.1:3000/downloads/${job.file_id}.zip`}
+                                    href={job.download_url || `${process.env.NEXT_PUBLIC_API_URL}/downloads/${job.file_id}.zip`}
                                     target="_blank"
                                     rel="noopener noreferrer"
                                     className="mt-1 flex items-center justify-center gap-2 px-4 py-2.5 bg-gradient-to-r from-green-500 to-green-600 text-white rounded-lg hover:from-green-600 hover:to-green-700 font-semibold text-sm shadow-md hover:shadow-lg transition-all"
