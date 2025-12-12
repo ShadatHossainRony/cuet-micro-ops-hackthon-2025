@@ -63,3 +63,21 @@ services:
       echo 'Bucket created successfully';
       "
     restart: "no"
+    
+  delineate-frontend:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.frontend.dev
+    ports:
+      - "3001:3001"
+    volumes:
+      - ../frontend/src:/app/src
+      - ../frontend/public:/app/public
+    env_file:
+      - ../frontend/.env.local
+    environment:
+      - NODE_ENV=development
+      - PORT=3001
+    depends_on:
+      - delineate-app
+      - delineate-jaeger

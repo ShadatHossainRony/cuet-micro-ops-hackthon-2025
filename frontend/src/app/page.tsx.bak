@@ -1,0 +1,76 @@
+'use client';
+
+import { useEffect } from 'react';
+import { HealthStatus } from '@/components/HealthStatus';
+import { DownloadJobs } from '@/components/DownloadJobs';
+import { TraceViewer } from '@/components/TraceViewer';
+import { SentryDashboard } from '@/components/SentryDashboard';
+import { initializeTracing } from '@/lib/tracing';
+
+export default function HomePage() {
+  useEffect(() => {
+    // Initialize OpenTelemetry on mount
+    initializeTracing();
+  }, []);
+
+  return (
+    <div className="min-h-screen bg-gray-50">
+      <header className="bg-white shadow">
+        <div className="max-w-7xl mx-auto px-4 py-6">
+          <h1 className="text-3xl font-bold text-gray-900">
+            Delineate Observability Dashboard
+          </h1>
+          <p className="text-gray-600 mt-1">
+            Real-time monitoring with Sentry & OpenTelemetry
+          </p>
+        </div>
+      </header>
+
+      <main className="max-w-7xl mx-auto px-4 py-8">
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          {/* Health Status */}
+          <HealthStatus />
+
+          {/* Download Jobs */}
+          <DownloadJobs />
+
+          {/* Trace Viewer */}
+          <TraceViewer />
+
+          {/* Sentry Dashboard */}
+          <SentryDashboard />
+        </div>
+
+        {/* Footer with Challenge Info */}
+        <div className="mt-8 bg-white rounded-lg shadow p-6">
+          <h2 className="text-lg font-semibold mb-3">
+            Challenge 4: Observability Dashboard
+          </h2>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
+            <div>
+              <h3 className="font-medium mb-2">✅ Implemented Features:</h3>
+              <ul className="space-y-1 text-gray-600">
+                <li>• Sentry error tracking with trace correlation</li>
+                <li>• OpenTelemetry distributed tracing</li>
+                <li>• Real-time API health monitoring</li>
+                <li>• Download job tracking with progress</li>
+                <li>• Jaeger UI integration for trace viewing</li>
+                <li>• End-to-end request correlation</li>
+              </ul>
+            </div>
+            <div>
+              <h3 className="font-medium mb-2">🎯 How to Test:</h3>
+              <ul className="space-y-1 text-gray-600">
+                <li>1. Start a download and watch real-time updates</li>
+                <li>2. Click &quot;Test Sentry Integration&quot; button</li>
+                <li>3. Check Sentry dashboard for captured errors</li>
+                <li>4. Open Jaeger UI to view distributed traces</li>
+                <li>5. Note trace IDs linking frontend ↔ backend</li>
+              </ul>
+            </div>
+          </div>
+        </div>
+      </main>
+    </div>
+  );
+}
