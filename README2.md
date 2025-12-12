@@ -1,12 +1,3 @@
-# Delineate - Download Microservice
-
-[![CI/CD Pipeline](https://github.com/ShadatHossainRony/cuet-micro-ops-hackthon-2025/actions/workflows/ci.yml/badge.svg)](https://github.com/ShadatHossainRony/cuet-micro-ops-hackthon-2025/actions/workflows/ci.yml)
-[![Node.js](https://img.shields.io/badge/node-%3E%3D24.10.0-brightgreen)](https://nodejs.org/)
-[![Docker](https://img.shields.io/badge/docker-compose-blue)](https://www.docker.com/)
-[![MinIO](https://img.shields.io/badge/storage-MinIO-red)](https://min.io)
-
-A production-ready file download microservice with S3 storage integration and automated CI/CD deployment.
-
 ## Features
 
 - ⚡ **Fast Download API** - Hono-based lightweight REST API
@@ -76,7 +67,6 @@ GitHub (push to main)
 ├── .github/
 │   ├── workflows/
 │   │   └── ci.yml              # CI/CD pipeline
-│   └── DEPLOYMENT_SETUP.md     # Deployment guide
 ├── docker/
 │   ├── compose.dev.yml         # Dev environment
 │   ├── compose.prod.yml        # Production environment
@@ -254,15 +244,6 @@ npm run format:check
 
 # Fix formatting
 npm run format
-```
-
-### Test Structure
-
-```
-scripts/
-├── e2e-test.ts     # Test cases (S3, API, health checks)
-└── run-e2e.ts      # Test runner with reporting
-```
 
 ## Challenge 1: S3 Storage Integration
 
@@ -490,16 +471,6 @@ docker compose exec delineate-minio mc ls local/
 docker compose exec delineate-minio mc mb local/downloads
 ```
 
-## License
-
-This project is part of the CUET Fest 2025 Hackathon Challenge.
-
-## Links
-
-- **Repository:** [GitHub](https://github.com/ShadatHossainRony/cuet-micro-ops-hackthon-2025)
-- **Architecture Design:** See [ARCHITECTURE.md](./ARCHITECTURE.md) for Challenge 2 solution
-- **Deployment Guide:** See [.github/DEPLOYMENT_SETUP.md](./.github/DEPLOYMENT_SETUP.md)
-- **API Documentation:** `http://localhost:3000/reference` (when running)
 
 ---
 
