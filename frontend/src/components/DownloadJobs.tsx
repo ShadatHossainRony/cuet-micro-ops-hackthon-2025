@@ -15,6 +15,8 @@ interface DownloadJob {
     processing_time?: number;
     trace_id?: string;
     created_at: Date;
+    progress?: number;
+    estimated_time?: number;
 }
 
 interface ErrorLog {
@@ -95,9 +97,11 @@ export function DownloadJobs() {
                     job.id === id
                         ? {
                             ...job,
-                            status: result.status === 'queued' ? 'pending' : 'processing',
+                            status: 'processing',
                             message: `✅ Job initiated successfully | Job ID: ${result.jobId} | Files: ${result.totalFileIds}`,
                             processing_time: responseTime / 1000,
+                            progress: 0,
+                            estimated_time: 15, // Estimate 15 seconds
                         }
                         : job
                 )
@@ -111,6 +115,48 @@ export function DownloadJobs() {
                 },
                 extra: { file_id, job_id: result.jobId, total_files: result.totalFileIds, response_time_ms: responseTime },
             });
+
+            // Simulate download progress (for demonstration)
+            const totalDuration = 15000; // 15 seconds simulation for quick demo
+            const updateInterval = 500; // Update every 0.5 seconds
+            const totalSteps = totalDuration / updateInterval;
+            let currentStep = 0;
+
+            const progressInterval = setInterval(() => {
+                currentStep++;
+                const progress = Math.min(Math.round((currentStep / totalSteps) * 100), 99);
+                const remainingTime = Math.max(0, Math.round((totalDuration - (currentStep * updateInterval)) / 1000));
+
+                setJobs((prev) =>
+                    prev.map((job) =>
+                        job.id === id && job.status === 'processing'
+                            ? {
+                                ...job,
+                                progress,
+                                estimated_time: remainingTime,
+                            }
+                            : job
+                    )
+                );
+
+                // Complete the job after 60 seconds
+                if (currentStep >= totalSteps) {
+                    clearInterval(progressInterval);
+                    setJobs((prev) =>
+                        prev.map((job) =>
+                            job.id === id
+                                ? {
+                                    ...job,
+                                    status: 'completed',
+                                    progress: 100,
+                                    message: `✅ Download completed successfully! File is ready.`,
+                                    download_url: `http://127.0.0.1:3000/downloads/${file_id}.zip`,
+                                }
+                                : job
+                        )
+                    );
+                }
+            }, updateInterval);
         } catch (error: any) {
             const responseTime = Date.now() - startTime;
 
@@ -168,9 +214,9 @@ export function DownloadJobs() {
 
         try {
             const res = await apiClient.testSentry();
-            console.log({res})
+            console.log({ res })
         } catch (error: any) {
-            console.log({error})
+            console.log({ error })
             const responseTime = Date.now() - startTime;
 
             // Extract requestId (trace ID) from the backend error response
@@ -419,7 +465,28 @@ export function DownloadJobs() {
                                 </div>
                             )}
 
-                            <div className="flex flex-wrap gap-2 text-xs">
+                            {/* Progress Bar for Processing Status */}
+                            {job.status === 'processing' && job.progress !== undefined && (
+                                <div className="mb-3">
+                                    <div className="flex items-center justify-between mb-1">
+                                        <span className="text-xs font-semibold text-blue-700">Processing...</span>
+                                        <span className="text-xs font-bold text-blue-700">{job.progress}%</span>
+                                    </div>
+                                    <div className="w-full bg-gray-200 rounded-full h-2.5">
+                                        <div
+                                            className="bg-gradient-to-r from-blue-500 to-blue-600 h-2.5 rounded-full transition-all duration-500"
+                                            style={{ width: `${job.progress}%` }}
+                                        />
+                                    </div>
+                                    {job.estimated_time && job.estimated_time > 0 && (
+                                        <div className="text-xs text-gray-600 mt-1">
+                                            Est. time remaining: ~{job.estimated_time}s
+                                        </div>
+                                    )}
+                                </div>
+                            )}
+
+                            <div className="flex flex-wrap gap-2 text-xs mb-3">
                                 {job.processing_time && (
                                     <div className="px-2 py-1 bg-purple-50 text-purple-700 rounded border border-purple-200 font-medium">
                                         ⏱️ {job.processing_time.toFixed(2)}s
@@ -432,12 +499,12 @@ export function DownloadJobs() {
                                 )}
                             </div>
 
-                            {job.download_url && (
+                            {job.status === 'completed' && (
                                 <a
-                                    href={job.download_url}
+                                    href={job.download_url || `http://127.0.0.1:3000/downloads/${job.file_id}.zip`}
                                     target="_blank"
                                     rel="noopener noreferrer"
-                                    className="mt-3 flex items-center justify-center gap-2 px-4 py-2 bg-linear-to-r from-green-500 to-green-600 text-white rounded-lg hover:from-green-600 hover:to-green-700 font-semibold text-sm shadow-md hover:shadow-lg transition-all"
+                                    className="mt-1 flex items-center justify-center gap-2 px-4 py-2.5 bg-gradient-to-r from-green-500 to-green-600 text-white rounded-lg hover:from-green-600 hover:to-green-700 font-semibold text-sm shadow-md hover:shadow-lg transition-all"
                                 >
                                     <Download className="w-4 h-4" />
                                     Download File

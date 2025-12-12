@@ -92,7 +92,13 @@ app.use(
   cors({
     origin: env.CORS_ORIGINS,
     allowMethods: ["GET", "POST", "OPTIONS"],
-    allowHeaders: ["Content-Type", "Authorization", "X-Request-ID"],
+    allowHeaders: [
+      "Content-Type",
+      "Authorization",
+      "X-Request-ID",
+      "traceparent",
+      "tracestate",
+    ],
     exposeHeaders: [
       "X-Request-ID",
       "X-RateLimit-Limit",
@@ -257,7 +263,7 @@ const sanitizeS3Key = (fileId: number): string => {
   // Ensure fileId is a valid integer within bounds (already validated by Zod)
   const sanitizedId = Math.floor(Math.abs(fileId));
   // Construct safe S3 key without user-controlled path components
-  return `downloads/${String(sanitizedId)}.zip`;
+  return `${String(sanitizedId)}.zip`;
 };
 
 // S3 health check
@@ -289,9 +295,12 @@ const checkS3Availability = async (
 }> => {
   const s3Key = sanitizeS3Key(fileId);
 
+  console.log({s3Key})
+
   // If no bucket configured, use mock mode
   if (!env.S3_BUCKET_NAME) {
     const available = fileId % 7 === 0;
+    console.log({available})
     return {
       available,
       s3Key: available ? s3Key : null,
@@ -305,12 +314,14 @@ const checkS3Availability = async (
       Key: s3Key,
     });
     const response = await s3Client.send(command);
+    console.log({ response });
     return {
       available: true,
       s3Key,
       size: response.ContentLength ?? null,
     };
-  } catch {
+  } catch(e) {
+    console.log({Error: e})
     return {
       available: false,
       s3Key: null,
