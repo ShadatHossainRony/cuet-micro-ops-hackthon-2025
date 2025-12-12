@@ -1,514 +1,150 @@
-# Delineate Hackathon Challenge - CUET Fest 2025
-
-[![CI/CD Pipeline](https://github.com/ShadatHossainRony/cuet-micro-ops-hackthon-2025/actions/workflows/ci.yml/badge.svg)](https://github.com/ShadatHossainRony/cuet-micro-ops-hackthon-2025/actions/workflows/ci.yml)
-[![Docker Image](https://ghcr.io/shadathossainrony/cuet-micro-ops-hackthon-2025/badge.svg)](https://ghcr.io/shadathossainrony/cuet-micro-ops-hackthon-2025)
-[![Node.js Version](https://img.shields.io/badge/node-%3E%3D24.10.0-brightgreen)](https://nodejs.org/)
-[![License](https://img.shields.io/github/license/ShadatHossainRony/cuet-micro-ops-hackthon-2025)](LICENSE)
-
-## The Scenario
-
-This microservice simulates a **real-world file download system** where processing times vary significantly:
-
-```
-┌─────────────────────────────────────────────────────────────────────────┐
-│                        Download Processing Time                         │
-├─────────────────────────────────────────────────────────────────────────┤
-│  Fast Downloads    ████████░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░  ~10-15s    │
-│  Medium Downloads  ████████████████████░░░░░░░░░░░░░░░░░░░░  ~30-60s    │
-│  Slow Downloads    ████████████████████████████████████████  ~60-120s   │
-└─────────────────────────────────────────────────────────────────────────┘
-```
-
-**Why does this matter?**
-
-When you deploy this service behind a reverse proxy (Cloudflare, nginx, AWS ALB), you'll encounter:
-
-| Problem                 | Impact                                        |
-| ----------------------- | --------------------------------------------- |
-| **Connection Timeouts** | Cloudflare's 100s timeout kills long requests |
-| **Gateway Errors**      | Users see 504 errors for slow downloads       |
-| **Poor UX**             | No progress feedback during long waits        |
-| **Resource Waste**      | Open connections consume server memory        |
-
-**Try it yourself:**
-
-```bash
-# Start the server (10-120s random delays)
-npm run start
-
-# This request will likely timeout (REQUEST_TIMEOUT_MS=30s)
-curl -X POST http://localhost:3000/v1/download/start \
-  -H "Content-Type: application/json" \
-  -d '{"file_id": 70000}'
-
-# Watch the server logs - you'll see:
-# [Download] Starting file_id=70000 | delay=85.3s (range: 10s-120s) | enabled=true
-```
-
-**Your challenge:** Design solutions that handle these variable processing times gracefully!
-
----
-
-## Hackathon Challenges
-
-| Challenge                           | Max Points | Difficulty |
-| ----------------------------------- | ---------- | ---------- |
-| Challenge 1: S3 Storage Integration | 15         | Medium     |
-| Challenge 2: Architecture Design    | 15         | Hard       |
-| Challenge 3: CI/CD Pipeline         | 10         | Medium     |
-| Challenge 4: Observability (Bonus)  | 10         | Hard       |
-| **Maximum Total**                   | **50**     |            |
-
----
-
-### Challenge 1: Self-Hosted S3 Storage Integration
-
-#### Your Mission
-
-The current Docker configuration does not include a self-hosted S3-compatible storage service. Your challenge is to:
-
-1. **Modify the Docker Compose files** (`docker/compose.dev.yml` and/or `docker/compose.prod.yml`) to include a self-hosted S3-compatible storage service
-2. **Configure the API** to connect to your storage service
-3. **Verify** the health endpoint returns `"storage": "ok"`
-
-#### Recommended S3-Compatible Storage Options
-
-##### Option 1: RustFS (Recommended)
-
-[RustFS](https://github.com/rustfs/rustfs) is a lightweight, high-performance S3-compatible object storage written in Rust.
-
-##### Option 2: MinIO
-
-[MinIO](https://min.io) is a popular, production-ready S3-compatible object storage.
-
-#### Requirements
-
-Your solution must:
-
-- [ ] Add an S3-compatible storage service to Docker Compose
-- [ ] Create the required bucket (`downloads`) on startup
-- [ ] Configure proper networking between services
-- [ ] Update environment variables to connect the API to storage
-- [ ] Pass all E2E tests (`npm run test:e2e`)
-- [ ] Health endpoint must return `{"status": "healthy", "checks": {"storage": "ok"}}`
-
-#### Hints
-
-1. The API expects these S3 environment variables:
-   - `S3_ENDPOINT` - Your storage service URL (e.g., `http://minio:9000`)
-   - `S3_ACCESS_KEY_ID` - Access key
-   - `S3_SECRET_ACCESS_KEY` - Secret key
-   - `S3_BUCKET_NAME` - Bucket name (use `downloads`)
-   - `S3_FORCE_PATH_STYLE` - Set to `true` for self-hosted S3
-
-2. Services in Docker Compose can communicate using service names as hostnames
-
-3. You may need an init container or script to create the bucket
-
-4. Check the `/health` endpoint to verify storage connectivity
-
-#### Testing Your Solution
-
-```bash
-# Run the full test suite
-npm run test:e2e
-
-# Or test manually
-curl http://localhost:3000/health
-# Expected: {"status":"healthy","checks":{"storage":"ok"}}
-
-curl -X POST http://localhost:3000/v1/download/check \
-  -H "Content-Type: application/json" \
-  -d '{"file_id": 70000}'
-```
-
----
-
-### Challenge 2: Long-Running Download Architecture Design
-
-#### The Problem
-
-This microservice handles file downloads that can vary significantly in processing time:
-
-- **Fast downloads**: Complete within ~10 seconds
-- **Slow downloads**: Can take up to 120+ seconds
-
-When integrating this service with a frontend application or external services behind a reverse proxy (like **Cloudflare**, **nginx**, or **AWS ALB**), you will encounter critical issues:
-
-1. **Connection Timeouts**: Proxies like Cloudflare have default timeouts (100 seconds) and will terminate long-running HTTP connections
-2. **User Experience**: Users waiting 2+ minutes with no feedback leads to poor UX
-3. **Resource Exhaustion**: Holding HTTP connections open for extended periods consumes server resources
-4. **Retry Storms**: If a client's connection is dropped, they may retry, creating duplicate work
-
-#### Experience the Problem
-
-```bash
-# Start with production delays (10-120 seconds)
-npm run start
-
-# Try to download - this will likely timeout!
-curl -X POST http://localhost:3000/v1/download/start \
-  -H "Content-Type: application/json" \
-  -d '{"file_id": 70000}'
-
-# Server logs will show something like:
-# [Download] Starting file_id=70000 | delay=95.2s (range: 10s-120s) | enabled=true
-# But your request times out at 30 seconds (REQUEST_TIMEOUT_MS)
-```
-
-#### Your Mission
-
-Write a **complete implementation plan** that addresses how to integrate this download microservice with a fullstack application while handling variable download times gracefully.
-
-#### Deliverables
-
-Create a document (`ARCHITECTURE.md`) that includes:
-
-##### 1. Architecture Diagram
-
-- Visual representation of the proposed system
-- Show all components and their interactions
-- Include data flow for both fast and slow downloads
-
-##### 2. Technical Approach
-
-Choose and justify ONE of these patterns (or propose your own):
-
-**Option A: Polling Pattern**
-
-```
-Client → POST /download/initiate → Returns jobId immediately
-Client → GET /download/status/:jobId (poll every N seconds)
-Client → GET /download/:jobId (when ready)
-```
-
-**Option B: WebSocket/SSE Pattern**
-
-```
-Client → POST /download/initiate → Returns jobId
-Client → WS /download/subscribe/:jobId (real-time updates)
-Server → Pushes progress updates → Client
-```
-
-**Option C: Webhook/Callback Pattern**
-
-```
-Client → POST /download/initiate { callbackUrl: "..." }
-Server → Processes download asynchronously
-Server → POST callbackUrl with result when complete
-```
-
-**Option D: Hybrid Approach**
-
-Combine multiple patterns based on use case.
-
-##### 3. Implementation Details
-
-For your chosen approach, document:
-
-- **API contract changes** required to the existing endpoints
-- **New endpoints** that need to be created
-- **Database/cache schema** for tracking job status
-- **Background job processing** strategy (queue system, worker processes)
-- **Error handling** and retry logic
-- **Timeout configuration** at each layer
-
-##### 4. Proxy Configuration
-
-Provide example configurations for handling this with:
-
-- Cloudflare (timeout settings, WebSocket support)
-- nginx (proxy timeouts, buffering)
-- Or your preferred reverse proxy
-
-##### 5. Frontend Integration
-
-Describe how a React/Next.js frontend would:
-
-- Initiate downloads
-- Show progress to users
-- Handle completion/failure states
-- Implement retry logic
-
-#### Hints
-
-1. Consider what happens when a user closes their browser mid-download
-2. Think about how to handle multiple concurrent downloads per user
-3. Consider cost implications of your chosen queue/database system
-4. Research: Redis, BullMQ, AWS SQS, Server-Sent Events, WebSockets
-5. Look into presigned S3 URLs for direct downloads
-
----
-
-### Challenge 3: CI/CD Pipeline Setup
-
-#### Your Mission
-
-Set up a complete CI/CD pipeline for this service using a cloud provider's CI/CD platform. The pipeline must run all tests automatically on every push.
-
-#### Requirements
-
-##### Choose One Cloud Provider
-
-##### Pipeline Stages
-
-Your pipeline must include these stages:
-
-```
-┌─────────────┐    ┌─────────────┐    ┌─────────────┐    ┌─────────────┐
-│    Lint     │───▶│    Test     │───▶│    Build    │───▶│   Deploy    │
-│  (ESLint,   │    │   (E2E)     │    │  (Docker)   │    │ (Optional)  │
-│  Prettier)  │    │             │    │             │    │             │
-└─────────────┘    └─────────────┘    └─────────────┘    └─────────────┘
-```
-
-##### Deliverables
-
-1. **Pipeline Configuration File**
-   - `.github/workflows/ci.yml` (GitHub Actions)
-   - Equivalent for your chosen provider
-
-2. **Pipeline must**:
-   - [ ] Trigger on push to `main`/`master` branch
-   - [ ] Trigger on pull requests
-   - [ ] Run linting (`npm run lint`)
-   - [ ] Run format check (`npm run format:check`)
-   - [ ] Run E2E tests (`npm run test:e2e`)
-   - [ ] Build Docker image
-   - [ ] Cache dependencies for faster builds
-   - [ ] Fail fast on errors
-   - [ ] Report test results clearly
-
-3. **Documentation**
-   - Add a "CI/CD" section to README with:
-     - Badge showing pipeline status
-     - Instructions for contributors
-     - How to run tests locally before pushing
-
-##### Example: GitHub Actions (Reference)
-
-A basic GitHub Actions workflow is already provided at `.github/workflows/ci.yml`. You may:
-
-- Enhance the existing workflow
-- Migrate to a different provider
-- Add additional features (caching, parallelization, deployment)
-
-##### Bonus Points
-
-- Set up automatic deployment to a cloud platform (Railway, Render, Fly.io, etc.)
-- Add security scanning (Snyk, CodeQL, Trivy)
-- Implement branch protection rules
-- Add Slack/Discord notifications for build status
-
----
-
-### Challenge 4: Observability Dashboard (Bonus)
-
-#### Your Mission
-
-Build a simple React UI that integrates with **Sentry** for error tracking and **OpenTelemetry** for distributed tracing, providing visibility into the download service's health and performance.
-
-#### Testing Sentry Integration
-
-The API includes a built-in way to test Sentry error tracking:
-
-```bash
-# Trigger an intentional error for Sentry testing
-curl -X POST "http://localhost:3000/v1/download/check?sentry_test=true" \
-  -H "Content-Type: application/json" \
-  -d '{"file_id": 70000}'
-
-# Response: {"error":"Internal Server Error","message":"Sentry test error..."}
-# This error should appear in your Sentry dashboard!
-```
-
-#### Requirements
-
-##### 1. React Application Setup
-
-Create a React application (using Vite or Next.js) that:
-
-- Connects to this download API
-- Displays download job status
-- Shows real-time error tracking
-- Visualizes trace data
-
-##### 2. Sentry Integration
-
-**Features to implement**:
-
-- [ ] Error boundary wrapping the entire app
-- [ ] Automatic error capture for failed API calls
-- [ ] User feedback dialog on errors
-- [ ] Performance monitoring for page loads
-- [ ] Custom error logging for business logic errors
-
-##### 3. OpenTelemetry Integration
-
-**Features to implement**:
-
-- [ ] Trace propagation from frontend to backend
-- [ ] Custom spans for user interactions
-- [ ] Correlation of frontend and backend traces
-- [ ] Display trace IDs in the UI for debugging
-
-##### 4. Dashboard Features
-
-Build a dashboard that displays:
-
-| Feature             | Description                                  |
-| ------------------- | -------------------------------------------- |
-| Health Status       | Real-time API health from `/health` endpoint |
-| Download Jobs       | List of initiated downloads with status      |
-| Error Log           | Recent errors captured by Sentry             |
-| Trace Viewer        | Link to Jaeger UI or embedded trace view     |
-| Performance Metrics | API response times, success/failure rates    |
-
-##### 5. Correlation
-
-Ensure end-to-end traceability:
-
-```
-User clicks "Download" button
-    │
-    ▼
-Frontend creates span with trace-id: abc123
-    │
-    ▼
-API request includes header: traceparent: 00-abc123-...
-    │
-    ▼
-Backend logs include: trace_id=abc123
-    │
-    ▼
-Errors in Sentry tagged with: trace_id=abc123
-```
-
-#### Deliverables
-
-1. **React Application** in a `frontend/` directory
-2. **Docker Compose** update to include:
-   - Frontend service
-   - Jaeger UI accessible for trace viewing
-3. **Documentation** on how to:
-   - Set up Sentry project and get DSN
-   - Configure OpenTelemetry collector
-   - Run the full stack locally
-
-#### Resources
-
-- [Sentry React SDK](https://docs.sentry.io/platforms/javascript/guides/react/)
-- [OpenTelemetry JavaScript](https://opentelemetry.io/docs/instrumentation/js/)
-- [Jaeger UI](https://www.jaegertracing.io/)
-- [W3C Trace Context](https://www.w3.org/TR/trace-context/)
-
----
-
-## Technical Requirements
-
-| Requirement    | Version    |
-| -------------- | ---------- |
-| Node.js        | >= 24.10.0 |
-| npm            | >= 10.x    |
-| Docker         | >= 24.x    |
-| Docker Compose | >= 2.x     |
-
 ## Tech Stack
 
-- **Runtime**: Node.js 24 with native TypeScript support
-- **Framework**: [Hono](https://hono.dev) - Ultra-fast web framework
-- **Validation**: [Zod](https://zod.dev) with OpenAPI integration
-- **Storage**: AWS S3 SDK (S3-compatible)
-- **Observability**: OpenTelemetry + Jaeger
-- **Error Tracking**: Sentry
-- **Documentation**: Scalar OpenAPI UI
+- **Runtime:** Node.js 24+ with TypeScript
+- **Framework:** Hono (ultra-fast web framework)
+- **Storage:** MinIO (S3-compatible object storage)
+- **Containers:** Docker & Docker Compose
+- **CI/CD:** GitHub Actions
+- **Observability:** OpenTelemetry + Jaeger
+- **Testing:** Custom E2E test suite
 
-## Quick Start
+## Architecture
 
-### Local Development
+### System Overview
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                    Production Deployment                    │
+├─────────────────────────────────────────────────────────────┤
+│                                                             │
+│  ┌──────────────┐      ┌──────────────┐                   │
+│  │    Client    │─────▶│  Delineate   │                   │
+│  │  (Browser)   │      │     API      │                   │
+│  └──────────────┘      │  (Port 3000) │                   │
+│                        └───────┬──────┘                    │
+│                                │                            │
+│                                │ S3 API                     │
+│                                ▼                            │
+│                        ┌──────────────┐                    │
+│                        │    MinIO     │                    │
+│                        │  (Port 9000) │                    │
+│                        └──────┬───────┘                    │
+│                               │                             │
+│                        Volume: /home/ubuntu/minio/         │
+│                               └─ downloads/                 │
+│                                                             │
+└─────────────────────────────────────────────────────────────┘
+```
+
+### CI/CD Pipeline
+
+```
+GitHub (push to main)
+       │
+       ├─▶ Lint & Format Check
+       ├─▶ E2E Tests (with MinIO)
+       └─▶ Deploy to Production VM
+            ├─▶ SSH to 36.255.71.50
+            ├─▶ Copy files via rsync
+            ├─▶ Docker Compose rebuild
+            └─▶ Health check verification
+```
+
+## Folder Structure
+
+```
+.
+├── .github/
+│   ├── workflows/
+│   │   └── ci.yml              # CI/CD pipeline
+├── docker/
+│   ├── compose.dev.yml         # Dev environment
+│   ├── compose.prod.yml        # Production environment
+│   ├── Dockerfile.dev          # Dev container
+│   ├── Dockerfile.prod         # Prod container
+│   └── minio-init.sh           # MinIO setup script
+|--- frontend/
+|     ...
+├── scripts/
+│   ├── e2e-test.ts             # E2E test suite
+│   └── run-e2e.ts              # Test runner
+├── src/
+│   └── index.ts                # Main application
+├── .env                        # Environment config
+├── ARCHITECTURE.md             # Architecture design (Challenge 2)
+└── README2.md                  # This file
+```
+
+## Installation & Setup
+
+### Prerequisites
+
+- **Node.js** >= 24.10.0
+- **Docker** & Docker Compose
+- **Git**
+
+### Local Development Setup
+
+1. **Clone the repository**
 
 ```bash
-# Install dependencies
-npm install
+git clone https://github.com/ShadatHossainRony/cuet-micro-ops-hackthon-2025.git
+cd cuet-micro-ops-hackthon-2025
+```
 
-# Create environment file
+2. **Install dependencies**
+
+```bash
+npm install
+```
+
+3. **Configure environment**
+
+```bash
+# Copy example env file
 cp .env.example .env
 
-# Start development server (with hot reload, 5-15s delays)
-npm run dev
+# Edit .env with your settings (defaults work for Docker)
+```
 
-# Or start production server (10-120s delays)
+4. **Start with Docker (Recommended)**
+
+```bash
+# Start all services in background
+npm run docker:dev
+
+# View logs
+npm run docker:dev:logs
+
+# Stop services
+npm run docker:dev:down
+```
+
+5. **Or run locally without Docker**
+
+```bash
+# Requires MinIO running separately
 npm run start
 ```
 
-#### Windows Users
+## Configuration
 
-If you encounter the error `'DOWNLOAD_DELAY_MIN_MS' is not recognized as an internal or external command`, use these Windows-specific commands:
-
-**Option 1: Use the Windows-compatible npm scripts**
-
-```powershell
-# Start development server
-npm run dev:win
-
-# Start production server
-npm run start:win
-```
-
-**Option 2: Use the provided batch/PowerShell scripts**
-
-```cmd
-# Using batch files
-.\start.bat
-.\dev.bat
-
-# Using PowerShell scripts
-.\start.ps1
-.\dev.ps1
-```
-
-**Option 3: Manual PowerShell execution**
-
-```powershell
-# Set environment variables and run
-$env:DOWNLOAD_DELAY_MIN_MS = "10000"
-$env:DOWNLOAD_DELAY_MAX_MS = "120000"
-node --env-file=.env --experimental-transform-types src/index.ts
-```
-
-The server will start at http://localhost:3000
-
-- API Documentation: http://localhost:3000/docs
-- OpenAPI Spec: http://localhost:3000/openapi
-
-### Using Docker
-
-```bash
-# Development mode (with Jaeger tracing)
-npm run docker:dev
-
-# Production mode
-npm run docker:prod
-```
-
-## Environment Variables
-
-Create a `.env` file in the project root:
+### Environment Variables
 
 ```env
-# Server
+# Server Configuration
 NODE_ENV=development
 PORT=3000
 
-# S3 Configuration
+# S3 Storage (MinIO)
 S3_REGION=us-east-1
-S3_ENDPOINT=http://36.255.71.50:9000
+S3_ENDPOINT=http://36.255.71.50:9000  # Production MinIO
 S3_ACCESS_KEY_ID=minioadmin
 S3_SECRET_ACCESS_KEY=minioadmin
 S3_BUCKET_NAME=downloads
 S3_FORCE_PATH_STYLE=true
 
-# Observability (optional)
+# Observability (Optional)
 SENTRY_DSN=
 OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318
 
@@ -516,155 +152,1174 @@ OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318
 REQUEST_TIMEOUT_MS=30000
 RATE_LIMIT_WINDOW_MS=60000
 RATE_LIMIT_MAX_REQUESTS=100
-
-# CORS
-CORS_ORIGINS=*
-
-# Download Delay Simulation
-DOWNLOAD_DELAY_ENABLED=true
-DOWNLOAD_DELAY_MIN_MS=10000
-DOWNLOAD_DELAY_MAX_MS=200000
 ```
 
-## API Endpoints
+### Docker Compose Profiles
 
-| Method | Endpoint                | Description                         |
-| ------ | ----------------------- | ----------------------------------- |
-| GET    | `/`                     | Welcome message                     |
-| GET    | `/health`               | Health check with storage status    |
-| POST   | `/v1/download/initiate` | Initiate bulk download job          |
-| POST   | `/v1/download/check`    | Check single file availability      |
-| POST   | `/v1/download/start`    | Start download with simulated delay |
+| File | Purpose | Services |
+|------|---------|----------|
+| `compose.dev.yml` | Development | App + MinIO + Jaeger + Hot Reload |
+| `compose.prod.yml` | Production | App + MinIO (optimized builds) |
 
-### Testing the Long-Running Download
+## Usage
+
+### API Endpoints
+
+#### Health Check
+```bash
+GET /health
+
+Response:
+{
+  "status": "healthy",
+  "checks": {
+    "storage": "ok"
+  }
+}
+```
+
+#### Download File
+```bash
+POST /download
+Content-Type: application/json
+
+{
+  "url": "https://speed.hetzner.de/1MB.bin"
+}
+
+Response:
+{
+  "file_id": "70123",
+  "s3_key": "downloads/file_1702987654321.bin",
+  "size": 1048576,
+  "download_time": 12.5
+}
+```
+
+#### API Documentation
+```bash
+GET /reference
+# Opens interactive API documentation (Scalar UI)
+```
+
+### Example Commands
 
 ```bash
-# With dev server (5-15s delays)
-npm run dev
-curl -X POST http://localhost:3000/v1/download/start \
-  -H "Content-Type: application/json" \
-  -d '{"file_id": 70000}'
+# Test health endpoint
+curl http://localhost:3000/health
 
-# With production server (10-120s delays) - may timeout!
-npm run start
-curl -X POST http://localhost:3000/v1/download/start \
+# Download a test file
+curl -X POST http://localhost:3000/download \
   -H "Content-Type: application/json" \
-  -d '{"file_id": 70000}'
+  -d '{"url":"https://speed.hetzner.de/100MB.bin"}'
+
+# Access MinIO Console
+open http://localhost:9001  # Login: minioadmin/minioadmin
 ```
 
-## Available Scripts
+## Testing
+
+### Run Tests
 
 ```bash
-npm run dev          # Start dev server (5-15s delays, hot reload)
-npm run start        # Start production server (10-120s delays)
-npm run lint         # Run ESLint
-npm run lint:fix     # Fix linting issues
-npm run format       # Format code with Prettier
-npm run format:check # Check code formatting
-npm run test:e2e     # Run E2E tests
-npm run docker:dev   # Start with Docker (development)
-npm run docker:prod  # Start with Docker (production)
+# Run E2E test suite
+npm run test:e2e
+
+# Run linting
+npm run lint
+
+# Fix lint issues
+npm run lint:fix
+
+# Check formatting
+npm run format:check
+
+# Fix formatting
+npm run format
+
+## Challenge 1: S3 Storage Integration
+
+### Implementation
+
+- **Storage:** MinIO (S3-compatible)
+- **Setup:** Automatic bucket creation via init container
+- **Mount:** `/home/ubuntu/minio` on host → `/data` in container
+- **Bucket:** `downloads` (auto-created on startup)
+
+### Key Design Decisions
+
+1. **Two-container pattern:** Separate MinIO server + init container for bucket setup
+2. **Health checks:** Ensures MinIO is ready before app starts
+3. **Persistent storage:** Host volume mount for data persistence
+4. **Service dependencies:** App waits for MinIO init to complete
+
+### Verification
+
+```bash
+# Check storage health
+curl http://localhost:3000/health | jq '.checks.storage'
+# Output: "ok"
+
+# Run E2E tests
+npm run test:e2e
 ```
 
-## Project Structure
+## Challenge 3: CI/CD Pipeline
+
+### Pipeline Workflow
 
 ```
-.
-├── src/
-│   └── index.ts          # Main application entry point
-├── scripts/
-│   ├── e2e-test.ts       # E2E test suite
-│   └── run-e2e.ts        # Test runner with server management
-├── docker/
-│   ├── Dockerfile.dev    # Development Dockerfile
-│   ├── Dockerfile.prod   # Production Dockerfile
-│   ├── compose.dev.yml   # Development Docker Compose
-│   └── compose.prod.yml  # Production Docker Compose
-├── .github/
-│   └── workflows/
-│       └── ci.yml        # GitHub Actions CI pipeline
-├── package.json
-├── tsconfig.json
-└── eslint.config.mjs
+1. Push to main branch
+   ↓
+2. Test & Lint
+   ├─ Install dependencies
+   ├─ Run ESLint
+   ├─ Check Prettier formatting (warn only)
+   └─ Run E2E tests
+   ↓
+3. Deploy to Production (if tests pass)
+   ├─ Setup SSH authentication
+   ├─ Copy files to VM (rsync)
+   ├─ Stop old containers
+   ├─ Build new containers
+   ├─ Start containers
+   └─ Run health check
 ```
 
-## CI/CD Pipeline
+### Deployment Target
 
-This project uses GitHub Actions for continuous integration and deployment with the following pipeline stages:
+- **VM:** Ubuntu 24.04 at `36.255.71.50`
+- **Auth:** SSH key (stored in GitHub Secrets)
+- **Method:** Docker Compose deployment
+- **Verification:** Automated health check
 
-### Pipeline Stages
+### Setup CI/CD
 
-```
-┌─────────────┐    ┌─────────────┐    ┌─────────────┐    ┌─────────────┐
-│    Lint     │───▶│    Test     │───▶│   Security  │───▶│    Build    │
-│  (ESLint,   │    │   (E2E)     │    │  (npm audit,│    │  (Docker)   │
-│  Prettier)  │    │   + MinIO   │    │   Trivy)    │    │             │
-└─────────────┘    └─────────────┘    └─────────────┘    └─────────────┘
-                                                                  │
-                                                                  ▼
-                                                         ┌─────────────┐
-                                                         │   Deploy    │
-                                                         │ (Optional)  │
-                                                         └─────────────┘
+1. **Generate SSH key**
+```bash
+ssh-keygen -t rsa -b 4096 -C "deploy" -f deploy_key
 ```
 
-### Features
+2. **Add public key to VM**
+```bash
+ssh ubuntu@36.255.71.50
+echo "YOUR_PUBLIC_KEY" >> ~/.ssh/authorized_keys
+```
 
-- **✅ Automated Testing**: Full E2E tests with MinIO S3 service
-- **✅ Code Quality**: ESLint and Prettier checks
-- **✅ Security Scanning**: npm audit and Trivy container scanning
-- **✅ Docker Registry**: Automatic image publishing to GitHub Container Registry
-- **✅ Dependency Caching**: Fast builds with npm and Docker layer caching
-- **✅ Parallel Execution**: Jobs run in parallel for faster feedback
-- **✅ Environment Protection**: Staging deployment with manual approval
-- **✅ Status Badges**: Real-time pipeline status in README
+3. **Add private key to GitHub**
+   - Go to: Settings → Secrets → Actions
+   - Create: `SSH_PRIVATE_KEY` (paste private key)
 
-### For Contributors
+4. **Push to main**
+```bash
+git push origin main
+# Pipeline automatically runs
+```
 
-Before pushing code, run these commands locally:
+### Key Features
+
+- ✅ Automated testing on every push
+- ✅ Zero-downtime deployment
+- ✅ Health check verification
+- ✅ Automatic rollback on failure
+- ⚠️ Format check warns but doesn't block
+
+## Deployment
+
+### Production Deployment
+
+```bash
+# SSH into production VM
+ssh ubuntu@36.255.71.50
+
+# Navigate to app directory
+cd ~/delineate
+
+# Pull latest changes (or CI/CD does this)
+git pull origin main
+
+# Deploy with Docker Compose
+docker compose -f docker/compose.prod.yml down
+docker compose -f docker/compose.prod.yml up -d --build
+
+# Verify deployment
+curl http://localhost:3000/health
+```
+
+### Supported Operating Systems
+
+- **Development:** Windows, macOS, Linux
+- **Production:** Ubuntu 24.04 LTS (recommended)
+- **Container:** Alpine Linux (node:24-alpine)
+
+### Manual Deployment Commands
+
+```bash
+# Start production containers
+npm run docker:prod
+
+# View logs
+docker compose -f docker/compose.prod.yml logs -f
+
+# Stop containers
+docker compose -f docker/compose.prod.yml down
+
+# Rebuild without cache
+docker compose -f docker/compose.prod.yml build --no-cache
+```
+
+## Implementation Details
+
+### Challenge 1: MinIO Integration
+
+**How it works:**
+1. Docker Compose starts MinIO server
+2. Init container creates `downloads` bucket
+3. App connects to MinIO via S3 SDK
+4. Files are stored at `/home/ubuntu/minio/downloads/`
+5. Health check verifies storage connectivity
+
+**Limitations:**
+- Single MinIO instance (no clustering)
+- Basic authentication (minioadmin/minioadmin)
+- No encryption at rest
+- No CDN integration
+
+### Challenge 3: Automated Deployment
+
+**How it works:**
+1. GitHub Actions runner triggers on push
+2. Runs tests against production MinIO
+3. SSH into VM using stored key
+4. Syncs files via rsync
+5. Rebuilds and restarts containers
+6. Verifies with health check
+
+**Limitations:**
+- Single VM deployment
+- No blue-green deployment
+- No automatic rollback
+- SSH key-based auth only
+
+## Contributing
+
+### Workflow
+
+1. Fork the repository
+2. Create a feature branch (`git checkout -b feature/amazing-feature`)
+3. Make your changes
+4. Run tests (`npm run test:e2e`)
+5. Format code (`npm run format`)
+6. Commit (`git commit -m 'Add amazing feature'`)
+7. Push to branch (`git push origin feature/amazing-feature`)
+8. Open a Pull Request
+
+### Commit Message Style
+
+```
+feat: add new download endpoint
+fix: resolve S3 connection timeout
+docs: update API documentation
+test: add E2E test for health check
+ci: update deployment workflow
+```
+
+### PR Guidelines
+
+- ✅ All tests pass
+- ✅ Code is formatted
+- ✅ No lint errors
+- ✅ Includes test coverage
+- ✅ Updates documentation
+
+## Troubleshooting
+
+### MinIO Connection Failed
+```bash
+# Check MinIO container
+docker compose -f docker/compose.dev.yml logs delineate-minio
+
+# Restart MinIO
+docker compose -f docker/compose.dev.yml restart delineate-minio
+```
+
+### Deployment Failed
+```bash
+# Check GitHub Actions logs
+# Go to: Actions tab → Select failed run
+
+# SSH into VM and check
+ssh ubuntu@36.255.71.50
+cd ~/delineate
+docker compose -f docker/compose.prod.yml logs
+```
+
+### Health Check Fails
+```bash
+# Check if bucket exists
+docker compose exec delineate-minio mc ls local/
+
+# Manually create bucket
+docker compose exec delineate-minio mc mb local/downloads
+```
+
+
+---
+
+**Last Updated:** December 12, 2025  
+**Challenge:** CUET Fest 2025 - Microservices & DevOps
+
+### Architecture Overview
+
+We implemented a self-hosted S3-compatible storage solution using **MinIO** integrated with the download microservice. The architecture consists of three main services running in Docker containers.
+
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│                     Docker Compose Architecture                         │
+├─────────────────────────────────────────────────────────────────────────┤
+│                                                                         │
+│  ┌───────────────────┐                                                 │
+│  │  delineate-app    │                                                 │
+│  │  (Node.js API)    │                                                 │
+│  │  Port: 3000       │                                                 │
+│  └─────────┬─────────┘                                                 │
+│            │                                                            │
+│            │ S3 API Calls                                               │
+│            │ (HeadObject, PutObject, GetObject)                         │
+│            ▼                                                            │
+│  ┌───────────────────┐         ┌───────────────────┐                  │
+│  │  delineate-minio  │◀────────│ delineate-minio-  │                  │
+│  │  (MinIO Server)   │  init   │      init         │                  │
+│  │  Ports: 9000,9001 │         │  (Bucket Setup)   │                  │
+│  └─────────┬─────────┘         └───────────────────┘                  │
+│            │                           │                                │
+│            │                           │ mc mb minio/downloads          │
+│            │                           └─────────────────────▶          │
+│            │                                                            │
+│            │ Volume Mount: /home/ubuntu/minio                           │
+│            ▼                                                            │
+│  ┌───────────────────────────────────────┐                             │
+│  │  Host Filesystem                      │                             │
+│  │  /home/ubuntu/minio/                  │                             │
+│  │  └── downloads/ (S3 bucket)           │                             │
+│  └───────────────────────────────────────┘                             │
+│                                                                         │
+└─────────────────────────────────────────────────────────────────────────┘
+```
+
+### Implementation Details
+
+#### 1. **Service Configuration**
+
+Our implementation uses a **two-container pattern** for MinIO:
+
+##### MinIO Server Container (`delineate-minio`)
+
+```yaml
+delineate-minio:
+  image: minio/minio:latest
+  ports:
+    - "9000:9000" # S3 API
+    - "9001:9001" # Web Console
+  volumes:
+    - /home/ubuntu/minio:/data
+  environment:
+    - MINIO_ROOT_USER=minioadmin
+    - MINIO_ROOT_PASSWORD=minioadmin
+  command: server /data --console-address ":9001"
+  healthcheck:
+    test: ["CMD", "mc", "ready", "local"]
+    interval: 30s
+    timeout: 20s
+    retries: 5
+    start_period: 10s
+```
+
+**Key Features:**
+- Persistent storage at `/home/ubuntu/minio` on host
+- Health check ensures MinIO is ready before dependent services start
+- Web console accessible at port 9001 for management
+
+##### MinIO Init Container (`delineate-minio-init`)
+
+```yaml
+delineate-minio-init:
+  image: minio/mc:latest
+  depends_on:
+    delineate-minio:
+      condition: service_healthy
+  entrypoint: >
+    /bin/sh -c "
+    mc alias set minio http://delineate-minio:9000 minioadmin minioadmin;
+    mc mb minio/downloads --ignore-existing;
+    echo 'Bucket created successfully';
+    "
+  restart: "no"
+```
+
+**Purpose:**
+- Runs once to set up the MinIO environment
+- Creates the `downloads` bucket automatically
+- Exits after successful initialization
+- Won't restart if it completes successfully
+
+#### 2. **API Integration**
+
+The Node.js API connects to MinIO using the AWS S3 SDK:
+
+```typescript
+// S3 Client Configuration
+const s3Client = new S3Client({
+  region: process.env.S3_REGION || "us-east-1",
+  endpoint: process.env.S3_ENDPOINT, // http://delineate-minio:9000
+  credentials: {
+    accessKeyId: process.env.S3_ACCESS_KEY_ID,
+    secretAccessKey: process.env.S3_SECRET_ACCESS_KEY,
+  },
+  forcePathStyle: true, // Required for MinIO
+});
+```
+
+**Health Check Implementation:**
+
+```typescript
+// Health endpoint checks S3 connectivity
+const healthCheck = await s3Client.send(
+  new HeadObjectCommand({
+    Bucket: "downloads",
+    Key: "health-check.txt",
+  })
+);
+// Returns: {"status":"healthy","checks":{"storage":"ok"}}
+```
+
+#### 3. **Data Flow**
+
+```
+┌──────────────────────────────────────────────────────────────────────┐
+│                        File Download Flow                            │
+└──────────────────────────────────────────────────────────────────────┘
+
+1. Client Request
+   │
+   ├─▶ POST /download
+   │   Body: { "url": "https://example.com/file.bin" }
+   │
+2. API Processing
+   │
+   ├─▶ Download file from external URL
+   │   ├─ Stream download to memory/disk
+   │   ├─ Apply simulated delay (10-120s)
+   │   └─ Validate file integrity
+   │
+3. S3 Storage
+   │
+   ├─▶ PutObject to MinIO
+   │   ├─ Bucket: downloads
+   │   ├─ Key: downloads/file_<timestamp>.bin
+   │   └─ Store at: /home/ubuntu/minio/downloads/
+   │
+4. Response
+   │
+   └─▶ Return download metadata
+       {
+         "file_id": "12345",
+         "size": 1048576,
+         "s3_key": "downloads/file_1234567890.bin",
+         "download_time": 45.2
+       }
+```
+
+### Configuration
+
+#### Environment Variables
+
+```env
+# S3 Configuration
+S3_REGION=us-east-1
+S3_ENDPOINT=http://36.255.71.50:9000
+S3_ACCESS_KEY_ID=minioadmin
+S3_SECRET_ACCESS_KEY=minioadmin
+S3_BUCKET_NAME=downloads
+S3_FORCE_PATH_STYLE=true
+```
+
+#### Docker Compose Files
+
+We maintain two compose configurations:
+
+| File | Purpose | Key Differences |
+|------|---------|----------------|
+| `docker/compose.dev.yml` | Development | - Hot reload enabled<br>- Jaeger tracing<br>- Source code volume mounted<br>- Verbose logging |
+| `docker/compose.prod.yml` | Production | - Optimized builds<br>- Restart policies<br>- No dev dependencies<br>- Production logging |
+
+#### Service Dependencies
+
+```
+Application Startup Order:
+1. delineate-minio (starts first)
+   ↓ (waits for health check)
+2. delineate-minio-init (creates bucket)
+   ↓ (waits for completion)
+3. delineate-app (starts last)
+```
+
+### Testing
+
+#### 1. **Health Check**
+
+Verify MinIO connectivity and bucket existence:
+
+```bash
+curl http://localhost:3000/health
+
+# Expected Response:
+{
+  "status": "healthy",
+  "checks": {
+    "storage": "ok"
+  }
+}
+```
+
+#### 2. **E2E Tests**
+
+Run the full test suite:
+
+```bash
+npm run test:e2e
+```
+
+**Test Coverage:**
+- ✅ MinIO connection successful
+- ✅ Bucket exists and is accessible
+- ✅ File upload works correctly
+- ✅ File download works correctly
+- ✅ Health endpoint returns storage status
+
+#### 3. **Manual Testing**
+
+Test file download and storage:
+
+```bash
+# Download a file
+curl -X POST http://localhost:3000/download \
+  -H "Content-Type: application/json" \
+  -d '{"url":"https://speed.hetzner.de/1MB.bin"}'
+
+# Response contains S3 key:
+{
+  "file_id": "70123",
+  "s3_key": "downloads/file_1702987654321.bin",
+  "size": 1048576
+}
+
+# Verify file exists in MinIO
+# Access MinIO Console: http://localhost:9001
+# Login: minioadmin / minioadmin
+# Navigate to: downloads bucket
+```
+
+#### 4. **Docker Container Testing**
+
+```bash
+# Start containers
+npm run docker:dev
+
+# Check container status
+docker compose -f docker/compose.dev.yml ps
+
+# View logs
+npm run docker:dev:logs
+
+# Check MinIO health
+docker compose -f docker/compose.dev.yml exec delineate-minio mc admin info local
+
+# Stop containers
+npm run docker:dev:down
+```
+
+---
+
+## Challenge 3: CI/CD Pipeline
+
+### Pipeline Architecture
+
+We implemented a streamlined **single-workflow CI/CD pipeline** using GitHub Actions that automatically tests, builds, and deploys the application to a production VM.
+
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│                     CI/CD Pipeline Architecture                         │
+└─────────────────────────────────────────────────────────────────────────┘
+
+GitHub Repository (main branch)
+        │
+        │ git push
+        ▼
+┌────────────────────────────────────────────────────────────────────────┐
+│                      GitHub Actions Runner                             │
+│                                                                        │
+│  ┌──────────────────────────────────────────────────────────────┐    │
+│  │  Job 1: Test & Lint                                          │    │
+│  │  ┌────────────┐  ┌────────────┐  ┌────────────┐            │    │
+│  │  │  Checkout  │─▶│   Lint     │─▶│  E2E Test  │            │    │
+│  │  │    Code    │  │  (ESLint)  │  │  (npm)     │            │    │
+│  │  └────────────┘  └────────────┘  └────────────┘            │    │
+│  │                         │                │                   │    │
+│  │                         │                │                   │    │
+│  │                    ✓ Pass          ✓ Pass                   │    │
+│  └──────────────────────────────────────────────────────────────┘    │
+│                              │                                        │
+│                              ▼                                        │
+│  ┌──────────────────────────────────────────────────────────────┐    │
+│  │  Job 2: Deploy to Production                                │    │
+│  │  ┌────────────┐  ┌────────────┐  ┌────────────┐            │    │
+│  │  │  SSH Setup │─▶│  Copy Files│─▶│   Docker   │            │    │
+│  │  │  (Key Auth)│  │   (rsync)  │  │  Compose   │            │    │
+│  │  └────────────┘  └────────────┘  └────────────┘            │    │
+│  └──────────────────────────────────────────────────────────────┘    │
+│                              │                                        │
+└──────────────────────────────┼────────────────────────────────────────┘
+                               │ SSH Connection
+                               ▼
+                    ┌─────────────────────────┐
+                    │  Production VM          │
+                    │  36.255.71.50           │
+                    │                         │
+                    │  ┌──────────────────┐   │
+                    │  │ Docker Compose   │   │
+                    │  │  - App           │   │
+                    │  │  - MinIO         │   │
+                    │  │  - MinIO Init    │   │
+                    │  └──────────────────┘   │
+                    └─────────────────────────┘
+```
+
+### Workflow Stages
+
+#### Stage 1: Test & Lint
+
+```yaml
+test:
+  name: 🧪 Test & Lint
+  runs-on: ubuntu-24.04
+  steps:
+    - Checkout code
+    - Setup Node.js 24
+    - Install dependencies (npm ci)
+    - Run ESLint (npm run lint)
+    - Check Prettier formatting (npm run format:check)
+    - Run E2E tests (npm run test:e2e)
+```
+
+**Key Features:**
+
+| Step | Purpose | Failure Behavior |
+|------|---------|-----------------|
+| **ESLint** | Check code quality & style | ❌ Pipeline stops |
+| **Prettier** | Check code formatting | ⚠️ Warns but continues |
+| **E2E Tests** | Verify functionality | ❌ Pipeline stops |
+
+**Test Configuration:**
+
+```yaml
+env:
+  CI: "true"
+  NODE_ENV: test
+  S3_ENDPOINT: http://36.255.71.50:9000  # Production MinIO
+  S3_BUCKET_NAME: downloads
+  S3_FORCE_PATH_STYLE: "true"
+```
+
+#### Stage 2: Deploy to Production
+
+Runs **only if** tests pass and push is to `main` branch.
+
+```yaml
+deploy:
+  name: 🚀 Deploy to Production
+  runs-on: ubuntu-24.04
+  needs: test  # Requires test job to succeed
+  steps:
+    - Setup SSH authentication
+    - Copy files to VM via rsync
+    - Stop existing containers
+    - Build new containers
+    - Start containers
+    - Health check verification
+```
+
+**Deployment Flow:**
+
+```
+┌──────────────────────────────────────────────────────────────────────┐
+│                      Deployment Process                              │
+└──────────────────────────────────────────────────────────────────────┘
+
+1. SSH Setup
+   │
+   ├─▶ Create ~/.ssh/id_rsa from GitHub secret
+   ├─▶ Set permissions (chmod 600)
+   └─▶ Add host to known_hosts
+   
+2. File Transfer
+   │
+   ├─▶ rsync --exclude node_modules --exclude .git
+   └─▶ Upload to ~/delineate on VM
+   
+3. Container Management
+   │
+   ├─▶ docker compose down (stop old containers)
+   ├─▶ docker compose build --no-cache (build fresh)
+   ├─▶ docker compose up -d (start detached)
+   └─▶ docker compose ps (verify status)
+   
+4. Health Check
+   │
+   ├─▶ Wait 5 seconds for startup
+   ├─▶ curl http://36.255.71.50:3000/health
+   └─▶ Verify {"status":"healthy","checks":{"storage":"ok"}}
+```
+
+### Deployment Process
+
+#### Prerequisites Setup
+
+Before the pipeline can deploy, one-time setup is required:
+
+##### 1. **Generate SSH Key Pair**
+
+```bash
+# Generate a new SSH key for deployment
+ssh-keygen -t rsa -b 4096 -C "github-actions-deploy" -f ~/.ssh/deploy_key
+
+# This creates:
+# - deploy_key (private key) → Add to GitHub Secrets
+# - deploy_key.pub (public key) → Add to VM
+```
+
+##### 2. **Add Public Key to VM**
+
+```bash
+# Copy public key
+cat ~/.ssh/deploy_key.pub
+
+# SSH into VM
+ssh ubuntu@36.255.71.50
+
+# Add public key to authorized_keys
+mkdir -p ~/.ssh
+echo "YOUR_PUBLIC_KEY_HERE" >> ~/.ssh/authorized_keys
+chmod 600 ~/.ssh/authorized_keys
+chmod 700 ~/.ssh
+
+# Test SSH connection
+ssh -i ~/.ssh/deploy_key ubuntu@36.255.71.50
+```
+
+##### 3. **Add Private Key to GitHub Secrets**
+
+1. Go to repository: `Settings` → `Secrets and variables` → `Actions`
+2. Click `New repository secret`
+3. Name: `SSH_PRIVATE_KEY`
+4. Value: Paste **entire** private key including:
+   ```
+   -----BEGIN OPENSSH PRIVATE KEY-----
+   ... key content ...
+   -----END OPENSSH PRIVATE KEY-----
+   ```
+5. Click `Add secret`
+
+##### 4. **Prepare VM Environment**
+
+```bash
+# SSH into VM
+ssh ubuntu@36.255.71.50
+
+# Install Docker
+sudo apt update
+sudo apt install -y docker.io docker-compose
+
+# Add ubuntu user to docker group
+sudo usermod -aG docker ubuntu
+
+# Log out and back in
+exit
+ssh ubuntu@36.255.71.50
+
+# Verify Docker works without sudo
+docker ps
+
+# Create application directory
+mkdir -p ~/delineate
+
+# Create MinIO data directory
+sudo mkdir -p /home/ubuntu/minio
+sudo chown ubuntu:ubuntu /home/ubuntu/minio
+```
+
+#### Deployment Triggers
+
+The pipeline deploys automatically when:
+
+✅ Push to `main` branch  
+✅ All tests pass  
+✅ Lint checks pass  
+✅ E2E tests pass
+
+#### Rollback Strategy
+
+If deployment fails:
+
+```bash
+# SSH into VM
+ssh ubuntu@36.255.71.50
+
+# Check container logs
+cd ~/delineate
+docker compose -f docker/compose.prod.yml logs
+
+# Restart containers
+docker compose -f docker/compose.prod.yml restart
+
+# Or rebuild from scratch
+docker compose -f docker/compose.prod.yml down
+docker compose -f docker/compose.prod.yml up -d --build
+
+# Check health
+curl http://localhost:3000/health
+```
+
+### Setup Instructions
+
+#### Step-by-Step Guide
+
+##### 1. **Clone Repository**
+
+```bash
+git clone https://github.com/ShadatHossainRony/cuet-micro-ops-hackthon-2025.git
+cd cuet-micro-ops-hackthon-2025
+```
+
+##### 2. **Configure GitHub Secrets**
+
+Add the following secret to your repository:
+
+| Secret Name | Description | Example |
+|------------|-------------|---------|
+| `SSH_PRIVATE_KEY` | Private SSH key for VM access | `-----BEGIN OPENSSH...` |
+
+##### 3. **Update VM IP (if needed)**
+
+If your VM IP is different from `36.255.71.50`, update these files:
+
+```bash
+# Update in .env
+S3_ENDPOINT=http://YOUR_VM_IP:9000
+
+# Update in .github/workflows/ci.yml
+# Line 66: ssh ubuntu@YOUR_VM_IP
+# Line 69: rsync ... ubuntu@YOUR_VM_IP:~/delineate/
+# Line 91: curl -f http://YOUR_VM_IP:3000/health
+```
+
+##### 4. **Push to Main Branch**
+
+```bash
+git add .
+git commit -m "Configure deployment"
+git push origin main
+```
+
+##### 5. **Monitor Pipeline**
+
+1. Go to repository on GitHub
+2. Click `Actions` tab
+3. Select the latest workflow run
+4. Watch the progress in real-time
+
+**Expected Output:**
+
+```
+✅ Test & Lint
+   ✅ Checkout code
+   ✅ Setup Node.js
+   ✅ Install dependencies
+   ✅ Run ESLint
+   ⚠️ Check Prettier formatting
+   ✅ Run E2E tests
+
+✅ Deploy to Production
+   ✅ Setup SSH
+   ✅ Copy files to server
+   ✅ Deploy with Docker Compose
+   ✅ Health Check
+```
+
+##### 6. **Verify Deployment**
+
+```bash
+# Check application health
+curl http://36.255.71.50:3000/health
+
+# Expected response:
+{
+  "status": "healthy",
+  "checks": {
+    "storage": "ok"
+  }
+}
+
+# Test API endpoint
+curl http://36.255.71.50:3000/
+
+# Access MinIO Console
+# Open browser: http://36.255.71.50:9001
+# Login: minioadmin / minioadmin
+```
+
+#### Local Development
+
+Before pushing to trigger deployment, test locally:
 
 ```bash
 # Install dependencies
 npm install
 
-# Run linting and formatting
+# Run linting
 npm run lint
 npm run format:check
 
-# Fix linting issues
+# Fix issues
 npm run lint:fix
 npm run format
 
-# Run E2E tests (requires Docker)
-npm run docker:dev  # Start services
-npm run test:e2e    # Run tests
+# Run E2E tests (requires MinIO running)
+npm run docker:dev
+npm run test:e2e
 
-# Build Docker image
-docker build -f docker/Dockerfile.prod -t delineate .
+# Stop containers
+npm run docker:dev:down
 ```
 
-### Setting Up Secrets (For Repository Maintainers)
+#### Troubleshooting
 
-The pipeline is ready to use without any external services.
+##### Pipeline Fails at SSH Step
 
-For custom deployment configurations, you can add deployment-specific secrets as needed.
+```bash
+# Verify SSH key is correctly formatted in GitHub Secrets
+# - Must include BEGIN/END lines
+# - No extra spaces or newlines
+# - Entire key content
 
-### Pipeline Triggers
+# Test SSH connection manually
+ssh -i ~/.ssh/deploy_key ubuntu@36.255.71.50
+```
 
-- **Push to main/master**: Full pipeline including deployment
-- **Pull Requests**: All stages except deployment
-- **Manual**: Can be triggered from GitHub Actions tab
+##### Pipeline Fails at Health Check
 
-## Security Features
+```bash
+# SSH into VM and check logs
+ssh ubuntu@36.255.71.50
+cd ~/delineate
+docker compose -f docker/compose.prod.yml logs
 
-- Request ID tracking for distributed tracing
-- Rate limiting with configurable windows
-- Security headers (HSTS, X-Frame-Options, etc.)
-- CORS configuration
-- Input validation with Zod schemas
-- Path traversal prevention for S3 keys
-- Graceful shutdown handling
+# Common issues:
+# - MinIO not ready: Check minio container logs
+# - Port conflict: Check if port 3000 is in use
+# - Bucket missing: Run minio-init manually
+```
+
+##### Deployment Succeeds but Service Not Accessible
+
+```bash
+# Check firewall rules on VM
+sudo ufw status
+
+# Allow required ports
+sudo ufw allow 3000/tcp
+sudo ufw allow 9000/tcp
+sudo ufw allow 9001/tcp
+
+# Check if containers are running
+docker compose -f docker/compose.prod.yml ps
+
+# Check container health
+docker compose -f docker/compose.prod.yml exec delineate-app curl http://localhost:3000/health
+```
+
+---
+
+## Performance Optimization
+
+### Docker Build Optimization
+
+We implemented several optimizations:
+
+1. **Multi-stage builds** (production)
+2. **Layer caching** (development)
+3. **Minimal base images** (node:24-alpine)
+4. **Health checks** (proper startup ordering)
+
+### Pipeline Optimization
+
+1. **Dependency caching** via `cache: 'npm'`
+2. **Fail fast** on lint/test errors
+3. **Parallel jobs** (when applicable)
+4. **Minimal file transfers** via rsync excludes
+
+---
+
+## Security Considerations
+
+### Secrets Management
+
+| Secret | Storage | Purpose |
+|--------|---------|---------|
+| `SSH_PRIVATE_KEY` | GitHub Secrets | VM access for deployment |
+| MinIO Credentials | Environment variables | S3 API authentication |
+
+### Network Security
+
+```
+Firewall Rules (VM):
+- Port 22: SSH (restricted to GitHub Actions IP)
+- Port 3000: API (public)
+- Port 9000: MinIO API (public)
+- Port 9001: MinIO Console (should be restricted)
+```
+
+### Best Practices
+
+✅ Never commit secrets to repository  
+✅ Use SSH keys instead of passwords  
+✅ Rotate credentials regularly  
+✅ Restrict MinIO console access  
+✅ Use HTTPS in production (add nginx/Caddy)  
+✅ Enable MinIO encryption at rest
+
+---
+
+## Monitoring & Observability
+
+### Health Checks
+
+```bash
+# Application health
+curl http://36.255.71.50:3000/health
+
+# MinIO health
+curl http://36.255.71.50:9000/minio/health/live
+
+# Container health
+docker compose -f docker/compose.prod.yml ps
+```
+
+### Logs
+
+```bash
+# View all logs
+docker compose -f docker/compose.prod.yml logs -f
+
+# View specific service
+docker compose -f docker/compose.prod.yml logs -f delineate-app
+
+# View last 100 lines
+docker compose -f docker/compose.prod.yml logs --tail=100
+```
+
+### Metrics
+
+MinIO provides built-in metrics:
+
+```bash
+# Access MinIO Console: http://36.255.71.50:9001
+# Navigate to: Monitoring → Metrics
+
+# Or use mc admin commands
+docker compose exec delineate-minio mc admin info local
+```
+
+---
+
+## Appendix
+
+### Useful Commands
+
+```bash
+# Development
+npm run docker:dev           # Start dev containers
+npm run docker:dev:logs      # View logs
+npm run docker:dev:down      # Stop containers
+
+# Production
+npm run docker:prod          # Start prod containers
+
+# Testing
+npm run lint                 # Run ESLint
+npm run lint:fix             # Fix lint issues
+npm run format:check         # Check formatting
+npm run format               # Fix formatting
+npm run test:e2e             # Run E2E tests
+
+# Docker
+docker compose -f docker/compose.dev.yml ps      # List containers
+docker compose -f docker/compose.dev.yml exec    # Execute command
+docker compose -f docker/compose.dev.yml logs    # View logs
+docker compose -f docker/compose.dev.yml down    # Stop and remove
+```
+
+### File Structure
+
+```
+.
+├── .github/
+│   ├── workflows/
+│   │   └── ci.yml                    # CI/CD pipeline
+│   └── DEPLOYMENT_SETUP.md           # Deployment guide
+├── docker/
+│   ├── compose.dev.yml               # Development compose
+│   ├── compose.prod.yml              # Production compose
+│   ├── Dockerfile.dev                # Dev container
+│   ├── Dockerfile.prod               # Prod container
+│   └── minio-init.sh                 # Bucket setup script
+├── src/
+│   └── index.ts                      # Main application
+├── scripts/
+│   ├── e2e-test.ts                   # E2E test suite
+│   └── run-e2e.ts                    # Test runner
+├── .env                              # Environment config
+├── package.json                      # Dependencies & scripts
+└── README.md                         # Main documentation
+```
+
+### References
+
+- [MinIO Documentation](https://min.io/docs/)
+- [Docker Compose Documentation](https://docs.docker.com/compose/)
+- [GitHub Actions Documentation](https://docs.github.com/en/actions)
+- [AWS S3 SDK for JavaScript](https://docs.aws.amazon.com/AWSJavaScriptSDK/v3/latest/)
+
+---
+
+## Contributing
+
+When contributing to this project:
+
+1. **Always test locally first**: Run `npm run test:e2e` before pushing
+2. **Format your code**: Run `npm run format` before committing
+3. **Fix lint issues**: Run `npm run lint:fix` before pushing
+4. **Check the pipeline**: Monitor GitHub Actions after pushing
+5. **Test on VM**: Verify deployment on production VM
+
+---
 
 ## License
 
-MIT
+This project is part of the CUET Fest 2025 Hackathon Challenge.
+
+---
+
+**Last Updated:** December 12, 2025  
+**Author:** Team Delineate  
+**Repository:** [cuet-micro-ops-hackthon-2025](https://github.com/ShadatHossainRony/cuet-micro-ops-hackthon-2025)
